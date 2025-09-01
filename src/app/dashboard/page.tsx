@@ -94,7 +94,6 @@ export default function DashboardPage() {
       // Set recent transactions
       const recent = financeData.slice(0, 5).map(t => ({
         id: t.id,
-        // @ts-ignore
         accountEmail: t.accounts?.email,
         description: t.description,
         profit: t.profit,

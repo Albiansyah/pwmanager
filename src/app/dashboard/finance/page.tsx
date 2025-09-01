@@ -15,13 +15,35 @@ import jsPDF from "jspdf";
 import autoTable from 'jspdf-autotable';
 import { ArrowLeft, Edit, Trash2, TrendingUp, Wallet, Search, Plus, Save, X, MinusCircle, Calendar as CalendarIcon, FileSpreadsheet, FileText, ChevronDown, Loader2 } from "lucide-react";
 
-// Interface dan helper function
-interface Finance { id: number; modal: number; harga_jual: number; profit: number; fee: number | null; created_at: string; transaction_type: 'sale' | 'expense'; description: string | null; platform: string | null; platform_detail: string | null; }
+// Interface untuk data (ditambah 'fee')
+interface Finance {
+  id: number;
+  modal: number;
+  harga_jual: number;
+  profit: number;
+  fee: number | null; // Kolom baru untuk biaya rekber/lainnya
+  created_at: string;
+  transaction_type: 'sale' | 'expense';
+  description: string | null;
+  platform: string | null;
+  platform_detail: string | null;
+}
+
+// Helper & Konstanta
 const formatCurrency = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
 const platforms = ["E-Money", "Bank", "Qris", "Tunai", "Lainnya"];
 const eWallets = ["Dana", "GoPay", "OVO", "ShopeePay", "Lainnya"];
 const banks = ["BCA", "BRI", "BNI", "Seabank", "Mandiri", "Jago", "Lainnya"];
-const dayPickerStyles = { caption_label: { color: '#1e293b' }, head: { color: '#475569' }, day: { color: '#334155' }, day_selected: { backgroundColor: '#4338ca', color: '#ffffff', fontWeight: 'bold' }, day_today: { color: '#4f46e5', fontWeight: 'bold' }, day_outside: { color: '#94a3b8' }, };
+
+// Style untuk kalender yang lebih baik
+const dayPickerStyles = {
+  caption_label: { color: '#1e293b' },
+  head: { color: '#475569' },
+  day: { color: '#334155' },
+  day_selected: { backgroundColor: '#4338ca', color: '#ffffff', fontWeight: 'bold' },
+  day_today: { color: '#4f46e5', fontWeight: 'bold' },
+  day_outside: { color: '#94a3b8' },
+};
 
 export default function FinancePage() {
   const [records, setRecords] = useState<Finance[]>([]);
@@ -30,7 +52,7 @@ export default function FinancePage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const router = useRouter();
-
+  
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const datePickerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +61,7 @@ export default function FinancePage() {
   const [deleting, setDeleting] = useState(false);
   const deleteMenuRef = useRef<HTMLDivElement>(null);
 
+  // State untuk form
   const [transactionType, setTransactionType] = useState<'sale' | 'expense'>('sale');
   const [modal, setModal] = useState("");
   const [hargaJual, setHargaJual] = useState("");
@@ -50,7 +73,7 @@ export default function FinancePage() {
   const [transactionDate, setTransactionDate] = useState<Date>(new Date());
   const [isFormDatePickerOpen, setIsFormDatePickerOpen] = useState(false);
   const formDatePickerRef = useRef<HTMLDivElement>(null);
-
+  
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
@@ -66,14 +89,14 @@ export default function FinancePage() {
   useEffect(() => { fetchFinance(); }, []);
   useEffect(() => { setPlatformDetail(""); }, [platform]);
 
-  const fetchFinance = async () => {
+  const fetchFinance = async () => { 
     setLoading(true);
     const { data, error } = await supabase.from("finance").select("*").order('created_at', { ascending: false });
     if (error) console.error("Error fetching finance:", error);
     else setRecords(data as Finance[]);
     setLoading(false);
   };
-
+  
   const filteredRecords = useMemo(() => {
     return records.filter((r) => {
       const searchText = search.toLowerCase();
@@ -84,39 +107,62 @@ export default function FinancePage() {
       return ( desc.includes(searchText) || r.modal.toString().includes(searchText) || r.harga_jual.toString().includes(searchText) );
     });
   }, [records, search, dateRange]);
-
+  
   const calculateSummary = (data: Finance[]) => {
     let totalJual = 0;
     let totalExpense = 0;
     let totalFee = 0;
+
     data.forEach(r => {
       if (r.transaction_type === 'sale') {
         totalJual += Number(r.harga_jual);
-        totalExpense += Number(r.modal);
+        totalExpense += Number(r.modal); // Modal dihitung sebagai pengeluaran
         totalFee += Number(r.fee || 0);
       } else if (r.transaction_type === 'expense') {
-        totalExpense += Number(r.modal);
+        totalExpense += Number(r.modal); // Pengeluaran biasa
       }
     });
+    
     const netProfit = (totalJual - totalFee) - totalExpense;
     return { totalJual, totalExpense, netProfit };
   };
 
   const totalSummary = useMemo(() => calculateSummary(records), [records]);
   const filteredSummary = useMemo(() => calculateSummary(filteredRecords), [filteredRecords]);
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    let dataToSubmit: any;
+    let dataToSubmit: Partial<Finance>;
     const submissionDate = transactionDate.toISOString();
+
     if (transactionType === 'sale') {
       if (!description || !modal || !hargaJual) { alert("Mohon lengkapi deskripsi, modal, dan harga jual."); setSubmitting(false); return; }
       const finalFee = Number(fee) || 0;
-      dataToSubmit = { created_at: submissionDate, transaction_type: 'sale', description, modal: Number(modal), harga_jual: Number(hargaJual), fee: finalFee, profit: (Number(hargaJual) - finalFee) - Number(modal), platform, platform_detail: platform === 'Bank' || platform === 'E-Money' ? platformDetail : null };
+      dataToSubmit = { 
+        created_at: submissionDate, 
+        transaction_type: 'sale', 
+        description,
+        modal: Number(modal), 
+        harga_jual: Number(hargaJual), 
+        fee: finalFee,
+        profit: (Number(hargaJual) - finalFee) - Number(modal),
+        platform, 
+        platform_detail: platform === 'Bank' || platform === 'E-Money' ? platformDetail : null 
+      };
     } else {
       if (!expenseAmount || !description) { alert("Mohon lengkapi jumlah dan deskripsi pengeluaran."); setSubmitting(false); return; }
-      dataToSubmit = { created_at: submissionDate, transaction_type: 'expense', modal: Number(expenseAmount), description, harga_jual: 0, profit: -Number(expenseAmount), fee: null, platform, platform_detail: platform === 'Bank' || platform === 'E-Money' ? platformDetail : null };
+      dataToSubmit = { 
+        created_at: submissionDate, 
+        transaction_type: 'expense', 
+        modal: Number(expenseAmount), 
+        description, 
+        harga_jual: 0, 
+        profit: -Number(expenseAmount), 
+        fee: null,
+        platform, 
+        platform_detail: platform === 'Bank' || platform === 'E-Money' ? platformDetail : null 
+      };
     }
     const query = editId ? supabase.from("finance").update(dataToSubmit).eq("id", editId) : supabase.from("finance").insert([dataToSubmit]);
     const { error } = await query;
@@ -124,9 +170,9 @@ export default function FinancePage() {
     else { resetForm(); await fetchFinance(); }
     setSubmitting(false);
   };
-
+  
   const handleDelete = async (id: number) => { if (!confirm("Anda yakin ingin menghapus data ini?")) return; const { error } = await supabase.from("finance").delete().eq("id", id); if (error) alert(`Gagal menghapus data: ${error.message}`); else await fetchFinance(); };
-
+  
   const startEdit = (record: Finance) => {
     setEditId(record.id);
     setTransactionType(record.transaction_type);
@@ -142,7 +188,7 @@ export default function FinancePage() {
       setExpenseAmount(record.modal.toString());
     }
   };
-
+  
   const resetForm = () => { setEditId(null); setTransactionType('sale'); setModal(""); setHargaJual(""); setFee(""); setExpenseAmount(""); setDescription(""); setPlatform(""); setPlatformDetail(""); setTransactionDate(new Date()); };
 
   const handleExportExcel = () => { const dataToExport = filteredRecords.map(r => ({ 'Tanggal': format(new Date(r.created_at), 'dd-MM-yyyy'), 'Tipe': r.transaction_type === 'sale' ? 'Penjualan' : 'Pengeluaran', 'Detail': r.description, 'Platform': r.platform_detail ? `${r.platform} - ${r.platform_detail}` : r.platform, 'Modal': r.transaction_type === 'sale' ? r.modal : '-', 'Harga Jual': r.transaction_type === 'sale' ? r.harga_jual : '-', 'Biaya Lain': r.transaction_type === 'sale' ? (r.fee || 0) : '-', 'Pengeluaran': r.transaction_type === 'expense' ? r.modal : '-', 'Profit/Loss': r.profit })); const worksheet = XLSX.utils.json_to_sheet(dataToExport); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Keuangan"); XLSX.writeFile(workbook, `Laporan_Keuangan_${format(new Date(), 'yyyyMMdd')}.xlsx`); };
@@ -242,7 +288,6 @@ export default function FinancePage() {
                     </form>
                 </div>
             </div>
-
             <div className="lg:col-span-2">
                  <div className="bg-white rounded-xl shadow-md border border-slate-200">
                     <div className="p-4 border-b border-slate-200 space-y-4">
@@ -266,7 +311,6 @@ export default function FinancePage() {
                         <div className="flex flex-col sm:flex-row gap-3">
                             <button onClick={handleExportExcel} className="flex-1 inline-flex items-center justify-center gap-2 text-sm px-3 py-2 bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 transition shadow-sm"> <FileSpreadsheet size={16}/> Export Excel</button>
                             <button onClick={handleExportPdf} className="flex-1 inline-flex items-center justify-center gap-2 text-sm px-3 py-2 bg-white text-purple-700 border border-purple-300 rounded-lg hover:bg-purple-50 transition shadow-sm"> <FileText size={16}/> Export PDF</button>
-                            
                             <div className="relative" ref={deleteMenuRef}>
                                 <button onClick={() => setIsDeleteMenuOpen(!isDeleteMenuOpen)} disabled={deleting}
                                 className="flex-1 inline-flex items-center justify-center gap-2 text-sm px-3 py-2 bg-red-50 text-red-700 border border-red-300 rounded-lg hover:bg-red-100 transition shadow-sm disabled:opacity-50">
@@ -275,35 +319,15 @@ export default function FinancePage() {
                                     <ChevronDown size={16}/>
                                 </button>
                                 {isDeleteMenuOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-64 bg-white border rounded-lg shadow-lg z-50 p-2">
-                                  <p className="text-xs text-black p-2">Pilih periode untuk hapus data:</p>
-                                  <button
-                                    onClick={() => handleBulkDelete('selected')}
-                                    className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black">
-                                    Hapus Sesuai Filter Tanggal
-                                  </button>
-                                  <button
-                                    onClick={() => handleBulkDelete('1m')}
-                                    className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black">
-                                    Hapus Data &gt; 1 Bulan
-                                  </button>
-                                  <button
-                                    onClick={() => handleBulkDelete('3m')}
-                                    className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black">
-                                    Hapus Data &gt; 3 Bulan
-                                  </button>
-                                  <button
-                                    onClick={() => handleBulkDelete('6m')}
-                                    className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black">
-                                    Hapus Data &gt; 6 Bulan
-                                  </button>
-                                  <button
-                                    onClick={() => handleBulkDelete('1y')}
-                                    className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black">
-                                    Hapus Data &gt; 1 Tahun
-                                  </button>
-                                </div>
-                              )}
+                                    <div className="absolute right-0 top-full mt-2 w-64 bg-white border rounded-lg shadow-lg z-50 p-2">
+                                        <p className="text-xs text-black p-2">Pilih periode untuk hapus data:</p>
+                                        <button onClick={() => handleBulkDelete('selected')} className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black"> Hapus Sesuai Filter Tanggal </button>
+                                        <button onClick={() => handleBulkDelete('1m')} className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black"> Hapus Data &gt; 1 Bulan </button>
+                                        <button onClick={() => handleBulkDelete('3m')} className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black"> Hapus Data &gt; 3 Bulan </button>
+                                        <button onClick={() => handleBulkDelete('6m')} className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black"> Hapus Data &gt; 6 Bulan </button>
+                                        <button onClick={() => handleBulkDelete('1y')} className="w-full text-left text-sm p-2 rounded-md hover:bg-slate-100 text-black"> Hapus Data &gt; 1 Tahun </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
